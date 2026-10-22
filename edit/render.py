@@ -277,7 +277,7 @@ def main():
 
     build_sfx()
     audio.build(src, "mix.wav",
-                [(HOOK[0], HOOK[1], 0.0, 0.6), (0.0, SRC_END, HL, 1.0)], SFX, TOTAL)
+                [(HOOK[0], HOOK[1], 0.0, 1.0), (0.0, SRC_END, HL, 1.0)], SFX, TOTAL)
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
                             "-r", str(FPS), "-i", "-", "-i", "mix.wav", "-map", "0:v", "-map", "1:a",
                             "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",

@@ -193,8 +193,6 @@ def write_wav(path, x):
 def build(src_video, out_wav, segments, sfx_events, total):
     """segments: list of (src_start, src_end, out_start, gain)."""
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src_video, "-vn", "-ac", "1", "-ar", str(SR),
-                    "-af", "highpass=f=80,afftdn=nf=-30,acompressor=threshold=-20dB:ratio=3:attack=5:release=120:makeup=2,"
-                    "equalizer=f=3000:t=q:w=1:g=2.5,equalizer=f=250:t=q:w=1:g=-2",
                     "voice.wav"], check=True)
     v = read_wav("voice.wav")
     n = int(total * SR)
@@ -231,7 +229,7 @@ def build(src_video, out_wav, segments, sfx_events, total):
     fade_in = np.minimum(np.arange(n) / (0.8 * SR), 1)
     fade_out = np.clip((n - np.arange(n)) / (1.2 * SR), 0, 1)
     mix = voice * 1.0 + sfx * 0.32 + mus * 0.22 * duck * fade_in * fade_out
-    mix = np.nan_to_num(np.tanh(mix * 1.1) / np.tanh(1.1))
+    mix = np.nan_to_num(mix)
     write_wav("mix_raw.wav", mix)
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", "mix_raw.wav", "-af",
                     "loudnorm=I=-14:TP=-1.5:LRA=9", "-ar", str(SR), out_wav], check=True)
