@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H, FPS = 1080, 1920, 30
+CRF = "16"
 SRC, AUDIO, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 T_START = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
 T_END = float(sys.argv[5]) if len(sys.argv) > 5 else 52.56
@@ -368,7 +369,7 @@ def main():
                             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
                             "-r", str(FPS), "-i", "-", "-ss", str(T_START), "-t", str(T_END - T_START), "-i", AUDIO,
-                            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-profile:v", "high",
+                            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "slow", "-crf", CRF, "-profile:v", "high",
                             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart",
                             "-shortest", OUT], stdin=subprocess.PIPE)
     fsz = W * H * 3; k = 0

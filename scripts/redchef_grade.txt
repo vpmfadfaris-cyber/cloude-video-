@@ -1,0 +1,1 @@
+scale=1080:1920:flags=lanczos,eq=brightness=0.03:contrast=1.08:saturation=1.10:gamma=1.08,curves=master='0/0.02 0.25/0.23 0.5/0.52 0.8/0.81 1/0.96',colorbalance=rs=-0.03:bs=0.04:rh=0.02:bh=-0.02,unsharp=5:5:0.6,vignette=PI/5

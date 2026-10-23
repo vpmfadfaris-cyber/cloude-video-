@@ -2,6 +2,7 @@
 import numpy as np, wave, subprocess, sys
 
 SR = 44100
+ORIG_GAIN = 0.62
 rng = np.random.default_rng(7)
 
 
@@ -109,7 +110,7 @@ def main(src, dst, dur):
     orig = np.frombuffer(raw, np.int16).reshape(-1, 2).astype(np.float32) / 32768
     n = max(len(orig), int(dur * SR))
     mix = np.zeros((n, 2), np.float32)
-    mix[:len(orig)] = orig * 0.62  # original is ~-8.6 LUFS, leave headroom for SFX
+    mix[:len(orig)] = orig * ORIG_GAIN  # original is ~-8.6 LUFS, leave headroom for SFX
     sfx = np.zeros(n, np.float32)
     for t, name, g in CUES:
         s = S[name] * g; i = int(t * SR); j = min(n, i + len(s))
