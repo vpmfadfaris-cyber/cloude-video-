@@ -1,13 +1,14 @@
-"""Tambah motion graphics, hook jualan & SFX pada video unboxing popcorn.
+"""Enjin motion graphics: helper sprite, animasi, kamera, SFX dan render.
 
-Guna:  python3 render.py assets/original.mp4 output/popcorn_hook.mp4
-Perlu: ffmpeg, numpy, pillow
+Setiap video ada fail 'spec' sendiri (popcorn.py, dherbs.py) yang tentukan
+sticker, timeline dan SFX. Perlu: ffmpeg, numpy, pillow.
 """
 import math
 import os
 import random
 import subprocess
 import sys
+import wave
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -152,49 +153,6 @@ def rays(r, n=16, color=(255, 230, 80, 120)):
     return im
 
 
-def build_sprites():
-    s = {}
-    # HOOK
-    s["hook1"] = hstack([text_img("POPCORN 1 KILO", FONT_FUN, 54, WHITE), emoji("😱", 52)])
-    s["hook2"] = pill(text_img("HARGA TAK MASUK AKAL!", FONT_FUN, 34, YELLOW, sw=4, shadow=False), RED, tilt=-3)
-    # TEKA HARGA
-    s["teka"] = pill(hstack([text_img("TEKA HARGA?", FONT_FUN, 40, BLACK, stroke=WHITE, sw=3, shadow=False),
-                             emoji("🤔", 42)]), YELLOW, tilt=4)
-    s["rmq"] = text_img("RM ??", FONT_BIG, 92, WHITE, sw=7)
-    # PROMOSI
-    s["promo"] = pill(hstack([emoji("🔥", 40), text_img("PROMOSI", FONT_FUN, 46, WHITE, sw=4, shadow=False),
-                              emoji("🔥", 40)]), RED, radius=14, tilt=-4)
-    s["murah"] = pill(text_img("HARGA MURAH GILA", FONT_FUN, 30, BLACK, stroke=YELLOW, sw=1, shadow=False),
-                      YELLOW, tilt=-4)
-    # FREE
-    burst = starburst(118, 14, YELLOW)
-    lab = vstack([text_img("DAPAT", FONT_FUN, 38, WHITE, sw=4), text_img("FREE!", FONT_FUN, 62, RED, stroke=WHITE, sw=5)], gap=-12)
-    burst.alpha_composite(lab, ((burst.width - lab.width) // 2, (burst.height - lab.height) // 2 + 4))
-    gift = emoji("🎁", 62)
-    burst.alpha_composite(gift, (burst.width - gift.width - 4, burst.height - gift.height - 4))
-    s["free"] = burst
-    # BESAR GILA
-    s["besar"] = hstack([text_img("BESAR GILA!", FONT_FUN, 66, YELLOW, sw=7), emoji("🤯", 58)])
-    # BANYAK
-    s["banyak"] = pill(hstack([text_img("PUAS HATI MAKAN", FONT_FUN, 34, WHITE, sw=4, shadow=False),
-                               emoji("🤤", 38)]), GREEN, tilt=3)
-    # PRICE
-    s["rays"] = rays(330)
-    s["price_burst"] = starburst(170, 18, RED)
-    s["rm18"] = text_img("RM18", FONT_BIG, 150, YELLOW, sw=10)
-    s["sahaja"] = pill(text_img("SAHAJA!", FONT_FUN, 40, BLACK, stroke=WHITE, sw=2, shadow=False), WHITE, tilt=-6)
-    s["kilo"] = pill(hstack([text_img("1 BEG = 1 KILO", FONT_FUN, 42, WHITE, sw=4, shadow=False),
-                             emoji("💪", 42)]), (25, 25, 25), border=YELLOW, bw=5, tilt=-3)
-    # CTA
-    s["cta"] = pill(hstack([emoji("🛒", 46), text_img("TEKAN BAKUL KUNING", FONT_FUN, 36, BLACK, stroke=YELLOW, sw=1,
-                                                          shadow=False)]), YELLOW, pad=(26, 16), bw=6)
-    s["cta_sub"] = text_img("SEBELUM PROMOSI TAMAT!", FONT_FUN, 30, WHITE, sw=4)
-    s["point"] = emoji("👇", 64)
-    s["sparkle"] = emoji("✨", 40)
-    s["corn"] = emoji("🍿", 44)
-    return s
-
-
 # ---------------------------------------------------------------- compositing
 def place(canvas, spr, cx, cy, scale=1.0, rot=0.0, alpha=1.0):
     if scale <= 0.01 or alpha <= 0.01:
@@ -232,14 +190,14 @@ def pop(t, t0, t1, dur_in=0.35, dur_out=0.18, elastic=False):
 
 
 class Confetti:
-    def __init__(self, t0, n=70):
+    def __init__(self, t0, n=70, y0=640):
         self.t0 = t0
         cols = [YELLOW, RED, WHITE, GREEN, (60, 140, 255), (255, 120, 200)]
         self.p = []
         for _ in range(n):
             ang = random.uniform(-math.pi, 0)
             spd = random.uniform(380, 900)
-            self.p.append(dict(x=W / 2 + random.uniform(-40, 40), y=640, vx=math.cos(ang) * spd * 0.8,
+            self.p.append(dict(x=W / 2 + random.uniform(-40, 40), y=y0, vx=math.cos(ang) * spd * 0.8,
                                vy=math.sin(ang) * spd, c=random.choice(cols), w=random.randint(8, 15),
                                h=random.randint(5, 9), r=random.uniform(0, 360), vr=random.uniform(-720, 720)))
 
@@ -275,31 +233,17 @@ def sparkles(canvas, spr, t, t0, t1, spots):
 
 
 # ---------------------------------------------------------------- camera moves
-PUNCHES = [  # (masa, kuat zoom, tempoh) – zoom 'punch' pada beat penting
-    (0.00, 0.18, 0.55),
-    (3.50, 0.07, 0.40),
-    (12.70, 0.07, 0.40),
-    (15.00, 0.14, 1.20),
-    (22.25, 0.07, 0.40),
-    (27.20, 0.20, 0.90),
-    (29.00, 0.10, 0.50),
-    (31.50, 0.06, 0.40),
-    (33.00, 0.08, 0.50),
-]
-SHAKES = [(0.05, 0.35, 10), (15.0, 0.30, 7), (27.2, 0.45, 14)]
-FLASHES = [(0.0, 0.18), (15.0, 0.12), (27.2, 0.22)]
-
-
-def camera(t):
+def camera(spec, t):
     z = 1.0
-    for t0, k, d in PUNCHES:
+    for p in spec.PUNCHES:  # (masa, kuat zoom, tempoh[, 'hold'])
+        t0, k, d = p[:3]
         if t0 <= t <= t0 + d:
             x = (t - t0) / d
-            z += k * (1 - ease_out_cubic(x)) if t0 != 15.0 else k * math.sin(math.pi * x) ** 0.6
+            z += k * math.sin(math.pi * x) ** 0.6 if p[3:] == ("hold",) else k * (1 - ease_out_cubic(x))
     # 'ken burns' halus supaya tak statik
     z += 0.025 * (0.5 + 0.5 * math.sin(t * 0.45))
     dx = dy = 0.0
-    for t0, d, amp in SHAKES:
+    for t0, d, amp in spec.SHAKES:
         if t0 <= t <= t0 + d:
             f = 1 - (t - t0) / d
             dx += amp * f * math.sin(t * 95)
@@ -307,99 +251,17 @@ def camera(t):
     return z, dx, dy
 
 
-def apply_camera(frame, t):
-    z, dx, dy = camera(t)
+def apply_camera(spec, frame, t):
+    z, dx, dy = camera(spec, t)
     cw, ch = W / z, H / z
-    x0 = (W - cw) / 2 - dx / z
-    y0 = (H - ch) / 2 - dy / z
-    x0 = clamp(x0, 0, W - cw)
-    y0 = clamp(y0, 0, H - ch)
+    x0 = clamp((W - cw) / 2 - dx / z, 0, W - cw)
+    y0 = clamp((H - ch) / 2 - dy / z, 0, H - ch)
     return frame.transform((W, H), Image.EXTENT, (x0, y0, x0 + cw, y0 + ch), Image.BILINEAR)
 
 
-# ---------------------------------------------------------------- overlay timeline
-def draw_overlays(canvas, t, S, confetti, dur):
-    # bar progress (retention)
-    d = ImageDraw.Draw(canvas)
-    d.rectangle((0, 0, W, 7), fill=(0, 0, 0, 110))
-    d.rectangle((0, 0, int(W * t / dur), 7), fill=YELLOW + (255,))
-
-    # 1) HOOK 0–3.2s
-    sc, a = pop(t, 0.05, 3.2, elastic=True)
-    place(canvas, S["hook1"], W / 2, 108, sc, rot=1.5 * math.sin(t * 6), alpha=a)
-    sc, a = pop(t, 0.35, 3.2)
-    place(canvas, S["hook2"], W / 2, 182, sc * (1 + 0.04 * math.sin(t * 14)), alpha=a)
-    sparkles(canvas, S["sparkle"], t, 0.4, 3.2, [(60, 70), (520, 150), (500, 60)])
-
-    # 2) TEKA HARGA 3.4–5.3s – tag RM?? berayun
-    sc, a = pop(t, 3.45, 5.3)
-    place(canvas, S["teka"], W / 2, 110, sc, alpha=a)
-    sc, a = pop(t, 3.6, 5.3, elastic=True)
-    place(canvas, S["rmq"], W / 2, 215, sc, rot=10 * math.sin((t - 3.6) * 7) * math.exp(-(t - 3.6) * 1.2), alpha=a)
-
-    # 3) PROMOSI 5.4–8.6s – masuk dari kiri
-    if 5.4 <= t <= 8.6:
-        x = -300 + (W / 2 + 300) * ease_out_back(clamp((t - 5.4) / 0.4), 1.6)
-        out = clamp((8.6 - t) / 0.2)
-        place(canvas, S["promo"], x, 110, 1 + 0.05 * math.sin(t * 12), alpha=out)
-        sc, a = pop(t, 6.1, 8.6)
-        place(canvas, S["murah"], W / 2 + 20, 182, sc, alpha=a)
-
-    # 4) DAPAT FREE 12.5–14.6s – starburst berpusing
-    sc, a = pop(t, 12.5, 14.6, elastic=True)
-    place(canvas, S["free"], 410, 175, sc, rot=-(t - 12.5) * 25, alpha=a)
-
-    # 5) BESAR GILA 15.0–17.8s
-    sc, a = pop(t, 15.05, 17.8, elastic=True)
-    place(canvas, S["besar"], W / 2, 120, sc * (1 + 0.05 * math.sin(t * 10)), alpha=a)
-    sparkles(canvas, S["corn"], t, 15.2, 17.8, [(70, 230), (505, 235), (120, 330), (460, 330)])
-
-    # 6) PUAS HATI 22.2–24.6s
-    sc, a = pop(t, 22.25, 24.6)
-    place(canvas, S["banyak"], W / 2, 120, sc, alpha=a)
-
-    # 7) TEASE sebelum harga 25.6–27.1s
-    sc, a = pop(t, 25.6, 27.15)
-    place(canvas, S["rmq"], W / 2, 140, sc * (1 + 0.08 * math.sin(t * 20)), rot=6 * math.sin(t * 13), alpha=a)
-
-    # 8) PRICE REVEAL 27.2–31.0s – stamp + confetti
-    if 27.2 <= t <= 31.0:
-        out = clamp((31.0 - t) / 0.25)
-        k = clamp((t - 27.2) / 0.22)
-        place(canvas, S["rays"], 180, 665, 0.8 + 0.1 * math.sin(t * 3), rot=(t - 27.2) * 30, alpha=out * k)
-        bs = ease_out_back(clamp((t - 27.25) / 0.3), 2.5)
-        place(canvas, S["price_burst"], 180, 665, 0.85 * bs * (1 + 0.03 * math.sin(t * 9)), rot=-(t - 27.2) * 15,
-              alpha=out)
-        slam = 1 + 2.2 * (1 - ease_out_cubic(k)) if k < 1 else 1 + 0.06 * math.sin((t - 27.42) * 11) * math.exp(
-            -(t - 27.42) * 1.5)
-        place(canvas, S["rm18"], 180, 655, 0.9 * slam, rot=-8, alpha=out * clamp(k * 3))
-        sc, a = pop(t, 27.6, 31.0, elastic=True)
-        place(canvas, S["sahaja"], 225, 755, sc, alpha=a * out)
-    confetti.draw(canvas, t)
-
-    # 9) 1 BEG = 1 KILO 31.2–33.0
-    sc, a = pop(t, 31.2, 33.0)
-    place(canvas, S["kilo"], W / 2, 130, sc, alpha=a)
-
-    # 10) CTA 33.0–akhir – butang berdenyut + jari
-    if t >= 33.0:
-        sc, _ = pop(t, 33.0, dur + 1, elastic=True)
-        beat = 1 + 0.07 * max(0, math.sin((t - 33.0) * 2 * math.pi * 2.2))
-        place(canvas, S["cta"], W / 2, 530, sc * beat)
-        sc2, _ = pop(t, 33.25, dur + 1)
-        place(canvas, S["cta_sub"], W / 2, 605, sc2)
-        place(canvas, S["point"], W / 2, 675 + 14 * abs(math.sin((t - 33) * 7)), sc2)
-        # kilauan lalu atas butang
-        sx = -120 + ((t - 33.3) % 1.1) / 1.1 * (W + 240)
-        shine = Image.new("RGBA", (W, H))
-        ImageDraw.Draw(shine).polygon([(sx, 490), (sx + 26, 490), (sx - 14, 570), (sx - 40, 570)],
-                                      fill=(255, 255, 255, 120))
-        canvas.alpha_composite(shine)
-
-
-def flash_alpha(t):
+def flash_alpha(spec, t):
     a = 0.0
-    for t0, d in FLASHES:
+    for t0, d in spec.FLASHES:
         if t0 <= t <= t0 + d:
             a = max(a, 1 - (t - t0) / d)
     return a * 0.85
@@ -450,34 +312,18 @@ def sfx_ding(vol=0.3):
     return vol * (np.sin(2 * np.pi * 1318 * tt) + 0.5 * np.sin(2 * np.pi * 1976 * tt)) * np.exp(-tt * 7) / 1.5
 
 
-def build_sfx(dur, path):
-    track = np.zeros(int(SR * (dur + 1)))
+SFX = {"pop": sfx_pop, "whoosh": sfx_whoosh, "boom": sfx_boom, "ching": sfx_ching, "ding": sfx_ding}
 
-    def add(t, s):
+
+def build_sfx(events, dur, path):
+    """events: senarai (masa, nama, kwargs)."""
+    track = np.zeros(int(SR * (dur + 1)))
+    for t, name, kw in events:
+        s = SFX[name](**kw)
         i = int(t * SR)
         track[i:i + len(s)] += s[:len(track) - i]
-
-    add(0.0, sfx_boom(vol=0.5))
-    add(0.05, sfx_pop())
-    add(0.35, sfx_whoosh())
-    add(3.45, sfx_pop(400, 1100))
-    add(3.6, sfx_pop(700, 1600, vol=0.3))
-    add(5.35, sfx_whoosh())
-    add(6.1, sfx_pop())
-    add(12.5, sfx_ding())
-    add(15.0, sfx_boom(vol=0.45))
-    add(15.05, sfx_pop(500, 1500))
-    add(22.25, sfx_pop())
-    add(25.6, sfx_whoosh(0.5, 0.3))
-    add(27.2, sfx_boom())
-    add(27.25, sfx_ching())
-    add(27.6, sfx_pop(600, 1700))
-    add(31.2, sfx_pop())
-    add(33.0, sfx_whoosh())
-    add(33.05, sfx_ding())
     track = np.clip(track, -1, 1)
     pcm = (track * 32767).astype("<i2")
-    import wave
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -485,15 +331,14 @@ def build_sfx(dur, path):
         w.writeframes(pcm.tobytes())
 
 
-# ---------------------------------------------------------------- main
-def main(src, dst):
+# ---------------------------------------------------------------- render
+def render(spec, src, dst):
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src]))
     os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
-    S = build_sprites()
-    confetti = Confetti(27.22)
+    S = spec.build_sprites()
     sfx_path = os.path.splitext(dst)[0] + "_sfx.wav"
-    build_sfx(dur, sfx_path)
+    build_sfx(spec.SFX_EVENTS, dur, sfx_path)
     silent = os.path.splitext(dst)[0] + "_video.mp4"
 
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-vf", f"scale={W}:{H},fps={FPS}",
@@ -508,14 +353,14 @@ def main(src, dst):
         if len(raw) < W * H * 3:
             break
         t = i / FPS
-        frame = apply_camera(Image.frombytes("RGB", (W, H), raw), t).convert("RGBA")
-        draw_overlays(frame, t, S, confetti, dur)
-        fa = flash_alpha(t)
+        frame = apply_camera(spec, Image.frombytes("RGB", (W, H), raw), t).convert("RGBA")
+        spec.draw_overlays(frame, t, S, dur)
+        fa = flash_alpha(spec, t)
         if fa > 0:
             frame = Image.blend(frame, white, fa)
         enc.stdin.write(frame.convert("RGB").tobytes())
         i += 1
-        if i % 150 == 0:
+        if i % 300 == 0:
             print(f"  {t:5.1f}s / {dur:.1f}s", flush=True)
     enc.stdin.close()
     enc.wait()
@@ -524,15 +369,10 @@ def main(src, dst):
     # gabung audio asal + SFX
     subprocess.check_call([
         "ffmpeg", "-v", "error", "-y", "-i", silent, "-i", src, "-i", sfx_path,
-        "-filter_complex", "[1:a]volume=1.0[a1];[2:a]volume=0.8[a2];"
+        "-filter_complex", f"[1:a]volume=1.0[a1];[2:a]volume={spec.SFX_VOLUME}[a2];"
                            "[a1][a2]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]",
         "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
         "-movflags", "+faststart", dst])
     os.remove(silent)
     os.remove(sfx_path)
     print("Siap:", dst)
-
-
-if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "assets", "original.mp4"),
-         sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "output", "popcorn_hook.mp4"))
